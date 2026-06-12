@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# agnes — 统一入口：把"python3 scripts/<工具>.py"封装成"agnes <工具>"。
+# 用法:  agnes <command> [args...]
+#   agnes text_to_image --prompt "一只猫"
+#   agnes image_to_video --images a,b --keyframes --prompt "..."
+#   agnes                 # 不带参数 → 列出所有可用命令
+#
+# 好处：调用方不用关心解释器(python3)、脚本路径、.py 后缀；
+# 自动挑选可用且版本达标(>=3.6)的 Python，从根上避免 "python 指向 py2 → SyntaxError"。
+
+set -euo pipefail
+
+# 1) 定位本脚本所在目录（无论从哪里调用都能找到 scripts/）
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPTS_DIR="$SELF/scripts"
+if [ ! -d "$SCRIPTS_DIR" ]; then
+  # 兼容把 agnes 放在 scripts/ 内部的情况
+  if [ -f "$SELF/_common.py" ]; then SCRIPTS_DIR="$SELF"; fi
+fi
+
+# 2) 选一个可用且 >=3.6 的 Python 解释器
+pick_python() {
+  for cand in python3 python; do
+    if command -v "$cand" >/dev/null 2>&1; then
+      if "$cand" -c 'import sys; sys.exit(0 if sys.version_info[:2] >= (3,6) else 1)' >/dev/null 2>&1; then
+        echo "$cand"; return 0
+      fi
+    fi
+  done
+  return 1
+}
+PY="$(pick_python || true)"
+if [ -z "${PY:-}" ]; then
+  echo "RESULT_JSON: {\"status\":\"error\",\"stage\":\"agnes\",\"error\":\"未找到 Python>=3.6（试过 python3/python）\"}"
+  exit 0
+fi
+
+# 3) 列出所有可用命令
+list_commands() {
+  echo "agnes — 可用命令（用法: agnes <command> [args...]）"
+  echo
+  for f in "$SCRIPTS_DIR"/*.py; do
+    base="$(basename "$f" .py)"
+    case "$base" in
+      _*) continue ;;   # 跳过 _common / _prompts 等内部模块
+    esac
+    echo "  agnes $base"
+  done
+  echo
+  echo "查看某命令的参数：agnes <command> --help"
+}
+
+# 4) 无参数 → 列命令
+if [ $# -eq 0 ]; then
+  list_commands
+  exit 0
+fi
+
+CMD="$1"; shift
+case "$CMD" in
+  -h|--help|help|list)
+    list_commands; exit 0 ;;
+esac
+
+TARGET="$SCRIPTS_DIR/$CMD.py"
+if [ ! -f "$TARGET" ]; then
+  echo "RESULT_JSON: {\"status\":\"error\",\"stage\":\"agnes\",\"error\":\"未知命令: $CMD\"}"
+  list_commands >&2
+  exit 0
+fi
+
+# 5) 执行（透传所有后续参数）。约定：退出码恒 0；结果走 stdout，进度走 stderr。
+"$PY" "$TARGET" "$@"
+rc=$?
+if [ "$rc" -ne 0 ]; then
+  # 子进程异常退出（未走正常 RESULT_JSON），补一条到 stdout，保证调用方总能从 stdout 读到结构化结果
+  echo "RESULT_JSON: {\"status\":\"error\",\"stage\":\"$CMD\",\"error\":\"命令异常退出（exit $rc），详见 stderr\"}"
+fi
+exit 0
