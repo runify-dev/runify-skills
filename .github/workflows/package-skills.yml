@@ -51,7 +51,7 @@ jobs:
             filename=$(basename "$file")
             echo "Uploading $filename -> skills/$RELEASE/$filename"
             aws s3 cp "$file" "s3://runify/skills/$RELEASE/$filename" \
-              --endpoint-url https://runify.cn-beijing.volces.com
+              --endpoint-url https://tos-cn-beijing.volces.com
           done
 
           echo "All files uploaded to s3://runify/skills/$RELEASE/"
