@@ -45,7 +45,7 @@ jobs:
         run: |
           pip install tos
 
-          RELEASE="${{ inputs.release }}"
+          export RELEASE="${{ inputs.release }}"
 
           python3 << 'EOF'
           import os
@@ -53,7 +53,7 @@ jobs:
 
           ak = os.environ["TOS_ACCESS_KEY"]
           sk = os.environ["TOS_SECRET_KEY"]
-          release = os.environ.get("RELEASE", "")
+          release = os.environ["RELEASE"]
 
           endpoint = "tos-cn-beijing.volces.com"
           region = "cn-beijing"
