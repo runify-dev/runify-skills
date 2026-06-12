@@ -2,6 +2,11 @@ name: Package Skills
 
 on:
   workflow_dispatch:
+    inputs:
+      release:
+        description: 'Release 版本号'
+        required: true
+        type: string
 
 jobs:
   package:
@@ -21,7 +26,8 @@ jobs:
             skill_name="${dir%/}"
             if [ -f "$dir/SKILL.md" ]; then
               echo "Packaging skill: $skill_name"
-              zip -r "packaged/${skill_name}.zip" "$skill_name"
+              # cd into skill dir so files are at zip root, not nested
+              (cd "$skill_name" && zip -r "../../packaged/${skill_name}.zip" .)
             fi
           done
 
@@ -34,9 +40,20 @@ jobs:
           echo "Packaged files:"
           ls -lh packaged/
 
-      - name: Upload packaged skills
-        uses: actions/upload-artifact@v4
-        with:
-          name: skills-package
-          path: packaged/
-          retention-days: 30
+      - name: Upload to Volcengine OSS
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.VOLC_ACCESSKEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.VOLC_SECRETKEY }}
+        run: |
+          pip install awscli
+
+          RELEASE="${{ inputs.release }}"
+
+          for file in packaged/*.zip; do
+            filename=$(basename "$file")
+            echo "Uploading $filename -> skills/$RELEASE/$filename"
+            aws s3 cp "$file" "s3://runify/skills/$RELEASE/$filename" \
+              --endpoint-url https://runify.cn-beijing.volces.com
+          done
+
+          echo "All files uploaded to s3://runify/skills/$RELEASE/"
