@@ -98,7 +98,7 @@ jobs:
               if os.path.isfile(icon_path):
                   icon_key = f"skills/{skill_name}/{version}/icon"
                   print(f"  Upload {icon_key}")
-                  client.put_object_from_file(bucket_name, icon_key, icon_path)
+                  client.put_object_from_file(bucket_name, icon_key, icon_path, headers={"x-tos-acl": "public-read"})
 
               # Upload zip
               zip_file = os.path.join(version_dir, "index.zip")
@@ -108,7 +108,7 @@ jobs:
               zip_size = os.path.getsize(zip_file)
               zip_key = f"skills/{skill_name}/{version}/index.zip"
               print(f"  Upload {zip_key}")
-              client.put_object_from_file(bucket_name, zip_key, zip_file)
+              client.put_object_from_file(bucket_name, zip_key, zip_file, headers={"x-tos-acl": "public-read"})
 
               skills_list.append(skill_name)
 
@@ -125,7 +125,7 @@ jobs:
 
               v_key = f"skills/{skill_name}/{version}/index.json"
               print(f"  Upload {v_key}")
-              client.put_object_from_file(bucket_name, v_key, version_json_path)
+              client.put_object_from_file(bucket_name, v_key, version_json_path, headers={"x-tos-acl": "public-read"})
 
               # Build skill index.json
               skill_index = {
@@ -166,7 +166,7 @@ jobs:
                   json.dump(skill_index, f, indent=2, ensure_ascii=False)
 
               print(f"  Upload {existing_key}")
-              client.put_object_from_file(bucket_name, existing_key, skill_json_path)
+              client.put_object_from_file(bucket_name, existing_key, skill_json_path, headers={"x-tos-acl": "public-read"})
 
           # Root index.json
           root_index = {"skills": skills_list}
@@ -175,7 +175,7 @@ jobs:
               json.dump(root_index, f, indent=2, ensure_ascii=False)
 
           print(f"\nUpload skills/index.json")
-          client.put_object_from_file(bucket_name, "skills/index.json", root_index_path)
+          client.put_object_from_file(bucket_name, "skills/index.json", root_index_path, headers={"x-tos-acl": "public-read"})
 
           print("\nDone!")
           print(f"  skills/index.json -> {root_index}")
