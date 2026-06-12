@@ -1,0 +1,42 @@
+name: Package Skills
+
+on:
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Find and package all skills
+        id: package
+        run: |
+          mkdir -p packaged
+
+          # Find all skill directories (containing SKILL.md)
+          for dir in */; do
+            skill_name="${dir%/}"
+            if [ -f "$dir/SKILL.md" ]; then
+              echo "Packaging skill: $skill_name"
+              zip -r "packaged/${skill_name}.zip" "$skill_name"
+            fi
+          done
+
+          # Create all-in-one zip
+          echo "Creating all-in-one package..."
+          cd packaged
+          zip -r "all-skills.zip" *.zip
+          cd ..
+
+          echo "Packaged files:"
+          ls -lh packaged/
+
+      - name: Upload packaged skills
+        uses: actions/upload-artifact@v4
+        with:
+          name: skills-package
+          path: packaged/
+          retention-days: 30

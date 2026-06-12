@@ -334,7 +334,7 @@ def _poll_video(video_id, interval=5, max_wait=1800):
 
 
 def gen_video_simple(prompt, out_path, image_url=None, image_urls=None,
-                     keyframes=False, duration_sec=5, voice=True):
+                     keyframes=False, duration_sec=5, audio=None):
     """根据 agnes-video-v2.0 文档支持四种模式：
       · 文生视频    ：image_url=None 且 image_urls=None        → 仅 prompt
       · 单图生视频  ：image_url=单个公网URL                    → 顶层 image（文档示例2）
@@ -342,8 +342,17 @@ def gen_video_simple(prompt, out_path, image_url=None, image_urls=None,
       · 关键帧动画  ：image_urls=[URL,...] 且 keyframes=True   → extra_body.image + mode:keyframes（示例4）
     视频只吃公网 URL，不支持 base64。"""
     num_frames = _calc_frames(duration_sec, FRAME_RATE)
-    full_prompt = prompt + (VIDEO_VOICE_SUFFIX if voice else "")
-    payload = {"model": MODEL_VIDEO, "prompt": full_prompt, "negative_prompt": VIDEO_NEG,
+    if audio is None:
+        # 默认：中文配音（短剧主场景），并压制英文语音/字幕
+        full_prompt = prompt + VIDEO_VOICE_SUFFIX
+        neg = VIDEO_NEG
+    else:
+        # 用户用 --audio 自定义声音（如"只有雨声，人物不说话"/"无声"/"背景轻音乐"）。
+        # 把描述拼进 prompt；负向只压字幕/文字，不强加人声限制，让用户描述自己决定。
+        a = audio.strip()
+        full_prompt = prompt + ("。音频：" + a + "；画面干净，不出现任何字幕或文字。" if a else "")
+        neg = "字幕, 硬字幕, 文字, subtitles, captions, text, watermark"
+    payload = {"model": MODEL_VIDEO, "prompt": full_prompt, "negative_prompt": neg,
                "num_frames": num_frames, "frame_rate": FRAME_RATE}
     # 归一化图片入参
     urls = []

@@ -293,14 +293,14 @@ metadata:
 
 **`./agnes text_to_video`** 文生视频
 - 必填：`--prompt "画面+动作+运镜"`
-- 可选：`--duration 秒数`（默认5）、`--intent k`、`--no-voice`（不加中文人声）、`--save`
+- 可选：`--duration 秒数`（默认5）、`--intent k`、`--audio "声音描述"`（不传=默认中文配音；可写"只有背景音乐，人物不说话"/"无声"/"人物说中文，有环境声"等）、`--save`
 
 **`./agnes image_to_video`** 图生视频（单图/多图/关键帧）
 - 单图：`--image-url` | `--file` | `--parent`（三选一）
 - 多图：`--images a,b[,...]`（逗号分隔；每项可为 URL/本机路径/scratch产物id），或多次 `--image x` 逐张传
 - 关键帧：在多图基础上加 `--keyframes`（在关键帧间生成平滑过渡）
 - 必填：`--prompt "..."`
-- 可选：`--duration 秒数`（默认5）、`--intent k`、`--no-voice`、`--save`
+- 可选：`--duration 秒数`（默认5）、`--intent k`、`--audio "声音描述"`（不传=默认中文配音；可写"只有背景音乐，人物不说话"/"无声"/"人物说中文，有环境声"等）、`--save`
 
 **`./agnes extract_video_frame`** 视频抽帧
 - 视频源：`--video-url URL` | `--file 本机路径` | `--parent 视频产物id`（三选一）

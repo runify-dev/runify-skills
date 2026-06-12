@@ -61,7 +61,8 @@ def main():
     ap.add_argument("--prompt", required=True)
     ap.add_argument("--duration", type=float, default=5)
     ap.add_argument("--intent", default=None)
-    ap.add_argument("--no-voice", action="store_true")
+    ap.add_argument("--audio", default=None,
+                    help='声音描述，如 "只有背景音乐，人物不说话" / "无声"；不传则默认中文配音')
     ap.add_argument("--save", action="store_true", help="把生成的产物下载到本地（默认只记 URL，不下载）")
     a = ap.parse_args()
     require_api_key(STAGE)
@@ -106,10 +107,10 @@ def main():
         if multi:
             _, url = gen_video_simple(a.prompt, local, image_urls=public_urls,
                                       keyframes=a.keyframes,
-                                      duration_sec=a.duration, voice=not a.no_voice)
+                                      duration_sec=a.duration, audio=a.audio)
         else:
             _, url = gen_video_simple(a.prompt, local, image_url=public_urls[0],
-                                      duration_sec=a.duration, voice=not a.no_voice)
+                                      duration_sec=a.duration, audio=a.audio)
     except Exception as e:
         scratch_commit(item["id"], status="error")
         fail(STAGE, f"生成失败：{e}", item_id=item["id"])
