@@ -19,26 +19,24 @@ jobs:
       - name: Find and package all skills
         id: package
         run: |
-          mkdir -p packaged
+          ROOT=$(pwd)
+          mkdir -p "$ROOT/packaged"
 
           # Find all skill directories (containing SKILL.md)
           for dir in */; do
             skill_name="${dir%/}"
             if [ -f "$dir/SKILL.md" ]; then
               echo "Packaging skill: $skill_name"
-              # cd into skill dir so files are at zip root, not nested
-              (cd "$skill_name" && zip -r "../../packaged/${skill_name}.zip" .)
+              (cd "$skill_name" && zip -r "$ROOT/packaged/${skill_name}.zip" .)
             fi
           done
 
           # Create all-in-one zip
           echo "Creating all-in-one package..."
-          cd packaged
-          zip -r "all-skills.zip" *.zip
-          cd ..
+          (cd "$ROOT/packaged" && zip -r "all-skills.zip" *.zip)
 
           echo "Packaged files:"
-          ls -lh packaged/
+          ls -lh "$ROOT/packaged/"
 
       - name: Upload to Volcengine OSS
         env:
