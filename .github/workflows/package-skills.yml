@@ -38,20 +38,36 @@ jobs:
           echo "Packaged files:"
           ls -lh "$ROOT/packaged/"
 
-      - name: Upload to Volcengine OSS
+      - name: Upload to Volcengine TOS
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.VOLC_ACCESSKEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.VOLC_SECRETKEY }}
+          TOS_ACCESS_KEY: ${{ secrets.VOLC_ACCESSKEY }}
+          TOS_SECRET_KEY: ${{ secrets.VOLC_SECRETKEY }}
         run: |
-          pip install awscli
+          pip install tos
 
           RELEASE="${{ inputs.release }}"
 
-          for file in packaged/*.zip; do
-            filename=$(basename "$file")
-            echo "Uploading $filename -> skills/$RELEASE/$filename"
-            aws s3 cp "$file" "s3://runify/skills/$RELEASE/$filename" \
-              --endpoint-url https://tos-cn-beijing.volces.com
-          done
+          python3 << 'EOF'
+          import os
+          import tos
 
-          echo "All files uploaded to s3://runify/skills/$RELEASE/"
+          ak = os.environ["TOS_ACCESS_KEY"]
+          sk = os.environ["TOS_SECRET_KEY"]
+          release = os.environ.get("RELEASE", "")
+
+          endpoint = "tos-cn-beijing.volces.com"
+          region = "cn-beijing"
+          bucket_name = "runify"
+
+          client = tos.TosClientV2(ak, sk, endpoint, region)
+
+          packaged_dir = "packaged"
+          for filename in os.listdir(packaged_dir):
+              if filename.endswith(".zip"):
+                  local_path = os.path.join(packaged_dir, filename)
+                  key = f"skills/{release}/{filename}"
+                  print(f"Uploading {filename} -> {key}")
+                  client.put_object_from_file(bucket_name, key, local_path)
+
+          print(f"All files uploaded to s3://runify/skills/{release}/")
+          EOF
