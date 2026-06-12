@@ -2,11 +2,6 @@ name: Package Skills
 
 on:
   workflow_dispatch:
-    inputs:
-      version:
-        description: '版本号 (如 1.0.0)'
-        required: true
-        type: string
 
 jobs:
   package:
@@ -20,32 +15,33 @@ jobs:
         id: package
         run: |
           ROOT=$(pwd)
-          VERSION="${{ inputs.version }}"
           mkdir -p "$ROOT/packaged"
 
           # Find all skill directories (containing SKILL.md and meta.json)
           for dir in */; do
             skill_name="${dir%/}"
             if [ -f "$dir/SKILL.md" ] && [ -f "$dir/meta.json" ]; then
-              echo "Packaging skill: $skill_name v$VERSION"
+              # Read version from meta.json
+              version=$(python3 -c "import json; print(json.load(open('$dir/meta.json'))['version'])")
+              echo "Packaging skill: $skill_name v$version"
 
               # Create version directory
-              mkdir -p "$ROOT/packaged/$skill_name/$VERSION"
+              mkdir -p "$ROOT/packaged/$skill_name/$version"
 
               # Zip skill files, excluding icon and meta.json
-              (cd "$skill_name" && zip -r "$ROOT/packaged/$skill_name/$VERSION/index.zip" . -x "icon" -x "meta.json")
+              (cd "$skill_name" && zip -r "$ROOT/packaged/$skill_name/$version/index.zip" . -x "icon" -x "meta.json")
 
               # Copy icon to version directory (alongside zip)
               if [ -f "$dir/icon" ]; then
-                cp "$dir/icon" "$ROOT/packaged/$skill_name/$VERSION/icon"
+                cp "$dir/icon" "$ROOT/packaged/$skill_name/$version/icon"
               fi
 
               # Copy meta.json to packaged dir for upload
               cp "$dir/meta.json" "$ROOT/packaged/$skill_name/meta.json"
 
               # Get zip size
-              zip_size=$(stat -f%z "$ROOT/packaged/$skill_name/$VERSION/index.zip" 2>/dev/null || stat -c%s "$ROOT/packaged/$skill_name/$VERSION/index.zip")
-              echo "  -> $skill_name/$VERSION/index.zip ($zip_size bytes)"
+              zip_size=$(stat -f%z "$ROOT/packaged/$skill_name/$version/index.zip" 2>/dev/null || stat -c%s "$ROOT/packaged/$skill_name/$version/index.zip")
+              echo "  -> $skill_name/$version/index.zip ($zip_size bytes)"
             fi
           done
 
@@ -56,7 +52,6 @@ jobs:
         env:
           TOS_ACCESS_KEY: ${{ secrets.VOLC_ACCESSKEY }}
           TOS_SECRET_KEY: ${{ secrets.VOLC_SECRETKEY }}
-          VERSION: ${{ inputs.version }}
         run: |
           pip install tos
 
@@ -67,7 +62,6 @@ jobs:
 
           ak = os.environ["TOS_ACCESS_KEY"]
           sk = os.environ["TOS_SECRET_KEY"]
-          version = os.environ["VERSION"]
           endpoint = "tos-cn-beijing.volces.com"
           region = "cn-beijing"
           bucket_name = "runify"
@@ -91,6 +85,11 @@ jobs:
 
               with open(meta_path, "r", encoding="utf-8") as f:
                   meta = json.load(f)
+
+              version = meta.get("version", "")
+              if not version:
+                  print(f"  Skip {skill_name}: no version in meta.json")
+                  continue
 
               version_dir = os.path.join(skill_dir, version)
 
