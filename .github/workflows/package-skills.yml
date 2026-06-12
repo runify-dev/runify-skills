@@ -3,8 +3,8 @@ name: Package Skills
 on:
   workflow_dispatch:
     inputs:
-      release:
-        description: 'Release 版本号'
+      version:
+        description: '版本号 (如 1.0.0)'
         required: true
         type: string
 
@@ -20,54 +20,149 @@ jobs:
         id: package
         run: |
           ROOT=$(pwd)
+          VERSION="${{ inputs.version }}"
           mkdir -p "$ROOT/packaged"
 
-          # Find all skill directories (containing SKILL.md)
+          # Find all skill directories (containing SKILL.md and meta.json)
           for dir in */; do
             skill_name="${dir%/}"
-            if [ -f "$dir/SKILL.md" ]; then
-              echo "Packaging skill: $skill_name"
-              (cd "$skill_name" && zip -r "$ROOT/packaged/${skill_name}.zip" .)
+            if [ -f "$dir/SKILL.md" ] && [ -f "$dir/meta.json" ]; then
+              echo "Packaging skill: $skill_name v$VERSION"
+
+              # Create version directory
+              mkdir -p "$ROOT/packaged/$skill_name/$VERSION"
+
+              # Zip skill files, excluding icon and meta.json
+              (cd "$skill_name" && zip -r "$ROOT/packaged/$skill_name/$VERSION/$skill_name.zip" . -x "icon" -x "meta.json")
+
+              # Copy icon to packaged dir for upload
+              if [ -f "$dir/icon" ]; then
+                cp "$dir/icon" "$ROOT/packaged/$skill_name/icon"
+              fi
+
+              # Copy meta.json to packaged dir for upload
+              cp "$dir/meta.json" "$ROOT/packaged/$skill_name/meta.json"
+
+              # Get zip size
+              zip_size=$(stat -f%z "$ROOT/packaged/$skill_name/$VERSION/$skill_name.zip" 2>/dev/null || stat -c%s "$ROOT/packaged/$skill_name/$VERSION/$skill_name.zip")
+              echo "  -> $skill_name/$VERSION/$skill_name.zip ($zip_size bytes)"
             fi
           done
 
-          # Create all-in-one zip
-          echo "Creating all-in-one package..."
-          (cd "$ROOT/packaged" && zip -r "all-skills.zip" *.zip)
-
           echo "Packaged files:"
-          ls -lh "$ROOT/packaged/"
+          find "$ROOT/packaged" -type f | sort
 
-      - name: Upload to Volcengine TOS
+      - name: Generate metadata and upload to TOS
         env:
           TOS_ACCESS_KEY: ${{ secrets.VOLC_ACCESSKEY }}
           TOS_SECRET_KEY: ${{ secrets.VOLC_SECRETKEY }}
+          VERSION: ${{ inputs.version }}
         run: |
           pip install tos
 
-          export RELEASE="${{ inputs.release }}"
-
-          python3 << 'EOF'
+          python3 << 'PYEOF'
           import os
-          import tos
+          import json
+          from datetime import datetime, timezone
 
           ak = os.environ["TOS_ACCESS_KEY"]
           sk = os.environ["TOS_SECRET_KEY"]
-          release = os.environ["RELEASE"]
-
+          version = os.environ["VERSION"]
           endpoint = "tos-cn-beijing.volces.com"
           region = "cn-beijing"
           bucket_name = "runify"
 
+          import tos
           client = tos.TosClientV2(ak, sk, endpoint, region)
 
           packaged_dir = "packaged"
-          for filename in os.listdir(packaged_dir):
-              if filename.endswith(".zip"):
-                  local_path = os.path.join(packaged_dir, filename)
-                  key = f"skills/{release}/{filename}"
-                  print(f"Uploading {filename} -> {key}")
-                  client.put_object_from_file(bucket_name, key, local_path)
+          skills_list = []
 
-          print(f"All files uploaded to s3://runify/skills/{release}/")
-          EOF
+          # Walk through packaged skill directories
+          for skill_name in sorted(os.listdir(packaged_dir)):
+              skill_dir = os.path.join(packaged_dir, skill_name)
+              if not os.path.isdir(skill_dir):
+                  continue
+
+              # Read meta.json
+              meta_path = os.path.join(skill_dir, "meta.json")
+              if not os.path.isfile(meta_path):
+                  continue
+
+              with open(meta_path, "r", encoding="utf-8") as f:
+                  meta = json.load(f)
+
+              # Upload icon if exists
+              icon_path = os.path.join(skill_dir, "icon")
+              if os.path.isfile(icon_path):
+                  icon_key = f"skills/{skill_name}/icon"
+                  print(f"  Upload {icon_key}")
+                  client.put_object_from_file(bucket_name, icon_key, icon_path)
+
+              # Upload zip
+              zip_file = os.path.join(skill_dir, version, f"{skill_name}.zip")
+              if not os.path.isfile(zip_file):
+                  continue
+
+              zip_size = os.path.getsize(zip_file)
+              zip_key = f"skills/{skill_name}/{version}/{skill_name}.zip"
+              print(f"  Upload {zip_key}")
+              client.put_object_from_file(bucket_name, zip_key, zip_file)
+
+              skills_list.append(skill_name)
+
+              # Build skill index.json
+              skill_index = {
+                  "id": skill_name,
+                  "name": meta.get("name", ""),
+                  "vendor": meta.get("vendor", skill_name),
+                  "icon": f"skills/{skill_name}/icon",
+                  "tags": meta.get("tags", []),
+                  "summary": meta.get("summary", ""),
+                  "capabilities": meta.get("capabilities", []),
+                  "requires": meta.get("requires", []),
+                  "note": meta.get("note", ""),
+                  "source": f"https://github.com/runify-dev/runify-skills/tree/main/{skill_name}",
+                  "versions": [
+                      {
+                          "version": version,
+                          "time": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                      }
+                  ]
+              }
+
+              # Check if existing index.json in OSS to merge versions
+              existing_key = f"skills/{skill_name}/index.json"
+              try:
+                  resp = client.get_object(bucket_name, existing_key)
+                  existing_data = json.loads(resp.read().decode("utf-8"))
+                  existing_versions = existing_data.get("versions", [])
+                  # Merge: keep existing versions, add new one if not already present
+                  version_nums = [v["version"] for v in existing_versions]
+                  if version not in version_nums:
+                      skill_index["versions"] = existing_versions + skill_index["versions"]
+                  else:
+                      skill_index["versions"] = existing_versions
+              except Exception:
+                  pass
+
+              # Write and upload skill index.json
+              skill_index_path = os.path.join(skill_dir, "index.json")
+              with open(skill_index_path, "w", encoding="utf-8") as f:
+                  json.dump(skill_index, f, indent=2, ensure_ascii=False)
+
+              print(f"  Upload {existing_key}")
+              client.put_object_from_file(bucket_name, existing_key, skill_index_path)
+
+          # Root index.json
+          root_index = {"skills": skills_list}
+          root_index_path = os.path.join(packaged_dir, "index.json")
+          with open(root_index_path, "w", encoding="utf-8") as f:
+              json.dump(root_index, f, indent=2, ensure_ascii=False)
+
+          print(f"\nUpload skills/index.json")
+          client.put_object_from_file(bucket_name, "skills/index.json", root_index_path)
+
+          print("\nDone!")
+          print(f"  skills/index.json -> {root_index}")
+          PYEOF
