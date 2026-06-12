@@ -33,19 +33,19 @@ jobs:
               mkdir -p "$ROOT/packaged/$skill_name/$VERSION"
 
               # Zip skill files, excluding icon and meta.json
-              (cd "$skill_name" && zip -r "$ROOT/packaged/$skill_name/$VERSION/$skill_name.zip" . -x "icon" -x "meta.json")
+              (cd "$skill_name" && zip -r "$ROOT/packaged/$skill_name/$VERSION/index.zip" . -x "icon" -x "meta.json")
 
-              # Copy icon to packaged dir for upload
+              # Copy icon to version directory (alongside zip)
               if [ -f "$dir/icon" ]; then
-                cp "$dir/icon" "$ROOT/packaged/$skill_name/icon"
+                cp "$dir/icon" "$ROOT/packaged/$skill_name/$VERSION/icon"
               fi
 
               # Copy meta.json to packaged dir for upload
               cp "$dir/meta.json" "$ROOT/packaged/$skill_name/meta.json"
 
               # Get zip size
-              zip_size=$(stat -f%z "$ROOT/packaged/$skill_name/$VERSION/$skill_name.zip" 2>/dev/null || stat -c%s "$ROOT/packaged/$skill_name/$VERSION/$skill_name.zip")
-              echo "  -> $skill_name/$VERSION/$skill_name.zip ($zip_size bytes)"
+              zip_size=$(stat -f%z "$ROOT/packaged/$skill_name/$VERSION/index.zip" 2>/dev/null || stat -c%s "$ROOT/packaged/$skill_name/$VERSION/index.zip")
+              echo "  -> $skill_name/$VERSION/index.zip ($zip_size bytes)"
             fi
           done
 
@@ -92,31 +92,48 @@ jobs:
               with open(meta_path, "r", encoding="utf-8") as f:
                   meta = json.load(f)
 
-              # Upload icon if exists
-              icon_path = os.path.join(skill_dir, "icon")
+              version_dir = os.path.join(skill_dir, version)
+
+              # Upload icon if exists (in version directory)
+              icon_path = os.path.join(version_dir, "icon")
               if os.path.isfile(icon_path):
-                  icon_key = f"skills/{skill_name}/icon"
+                  icon_key = f"skills/{skill_name}/{version}/icon"
                   print(f"  Upload {icon_key}")
                   client.put_object_from_file(bucket_name, icon_key, icon_path)
 
               # Upload zip
-              zip_file = os.path.join(skill_dir, version, f"{skill_name}.zip")
+              zip_file = os.path.join(version_dir, "index.zip")
               if not os.path.isfile(zip_file):
                   continue
 
               zip_size = os.path.getsize(zip_file)
-              zip_key = f"skills/{skill_name}/{version}/{skill_name}.zip"
+              zip_key = f"skills/{skill_name}/{version}/index.zip"
               print(f"  Upload {zip_key}")
               client.put_object_from_file(bucket_name, zip_key, zip_file)
 
               skills_list.append(skill_name)
+
+              # Build version index.json
+              version_index = {
+                  "version": version,
+                  "time": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                  "size": zip_size,
+                  "file": "index.zip"
+              }
+              version_json_path = os.path.join(version_dir, "index.json")
+              with open(version_json_path, "w", encoding="utf-8") as f:
+                  json.dump(version_index, f, indent=2, ensure_ascii=False)
+
+              v_key = f"skills/{skill_name}/{version}/index.json"
+              print(f"  Upload {v_key}")
+              client.put_object_from_file(bucket_name, v_key, version_json_path)
 
               # Build skill index.json
               skill_index = {
                   "id": skill_name,
                   "name": meta.get("name", ""),
                   "vendor": meta.get("vendor", skill_name),
-                  "icon": f"skills/{skill_name}/icon",
+                  "icon": f"skills/{skill_name}/{version}/icon",
                   "tags": meta.get("tags", []),
                   "summary": meta.get("summary", ""),
                   "capabilities": meta.get("capabilities", []),
@@ -137,22 +154,20 @@ jobs:
                   resp = client.get_object(bucket_name, existing_key)
                   existing_data = json.loads(resp.read().decode("utf-8"))
                   existing_versions = existing_data.get("versions", [])
-                  # Merge: keep existing versions, add new one if not already present
                   version_nums = [v["version"] for v in existing_versions]
                   if version not in version_nums:
-                      skill_index["versions"] = existing_versions + skill_index["versions"]
+                      skill_index["versions"] = skill_index["versions"] + existing_versions
                   else:
                       skill_index["versions"] = existing_versions
               except Exception:
                   pass
 
-              # Write and upload skill index.json
-              skill_index_path = os.path.join(skill_dir, "index.json")
-              with open(skill_index_path, "w", encoding="utf-8") as f:
+              skill_json_path = os.path.join(skill_dir, "index.json")
+              with open(skill_json_path, "w", encoding="utf-8") as f:
                   json.dump(skill_index, f, indent=2, ensure_ascii=False)
 
               print(f"  Upload {existing_key}")
-              client.put_object_from_file(bucket_name, existing_key, skill_index_path)
+              client.put_object_from_file(bucket_name, existing_key, skill_json_path)
 
           # Root index.json
           root_index = {"skills": skills_list}
