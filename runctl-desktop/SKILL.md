@@ -1,6 +1,6 @@
 ---
 name: 桌面控制(runctl)
-description: 跨平台(macOS/Windows)桌面自动化 / 计算机使用技能，封装 runctl 命令行工具。能力：列出显示器；列出窗口及其 id(同名窗口按 id 精确定位)；截屏(整个虚拟桌面/某显示器/全部显示器/某窗口，即使被遮挡)；移动鼠标并点击/右键/双击；激活窗口置顶；滚轮滚动；按下-拖拽-释放；输入文字；按单键或组合键(enter/esc/tab/cmd+a/alt+f4 等)；用系统默认程序打开 URL/文件/应用；监视窗口或屏幕的像素变化，等到首次变化或限时退出(退出码区分)；检查并(在 macOS)申请屏幕录制与辅助功能权限。坐标做法：先用 `--json shot --grid` 截图(--grid 叠带刻度的坐标网格助读坐标；截图一律写进会话落盘目录 $RUNIFY_OUTPUT_DIR)拿到图的宽高，视觉照网格刻度定出目标像素后，点击/移动/滚动/拖拽时连同宽高一起传 --shot-w/--shot-h，runctl 按比例映射到窗口实时矩形(任意 DPI 都准，不用手算)。用法是 agent 自己跑一个 看→懂→定→做→验 的闭环：windows 锁定目标窗口 id、先建界面地图；之后反复 --json shot 截图 → 把截图连同"用户到底要干什么"交给图片理解技能(没有就给用户确认)，让它回 当前状态+下一步最优单动作+目标像素 → activate 后 click/type 执行那一步 → 再截图核对 → 没完成再来一轮。一次性操作直接这样转；只有"等窗口变化再处理"(如盯微信新消息回复)才在每轮"看"之前加一道 watch 门(--until-change，靠退出码分支)。当用户要：操作桌面或某个应用、点某个按钮、自动填表单、截图看屏幕上有什么、控制微信/某软件、监听窗口有没有新消息再处理、模拟鼠标键盘、自动化 GUI 操作，或提到 runctl 时，使用本技能。
+description: 跨平台(macOS/Windows)桌面自动化 / 计算机使用技能，封装 runctl 命令行工具。能力：列出显示器；列出窗口及其 id(同名窗口按 id 精确定位)；截屏(整个虚拟桌面/某显示器/全部显示器/某窗口，即使被遮挡)；移动鼠标并点击/右键/双击；激活窗口置顶；滚轮滚动；按下-拖拽-释放；输入文字；按单键或组合键(enter/esc/tab/cmd+a/alt+f4 等)；用系统默认程序打开 URL/文件/应用；监视窗口或屏幕的像素变化，等到首次变化或限时退出(退出码区分)；检查并(在 macOS)申请屏幕录制与辅助功能权限。坐标做法：先用 `--json shot --grid` 截图(--grid 叠带刻度的坐标网格助读坐标；截图一律写进会话落盘目录 $RUNIFY_OUTPUT_DIR)拿到图的宽高，视觉照网格刻度定出目标像素后，点击/移动/滚动/拖拽时连同宽高一起传 --shot-w/--shot-h，runctl 按比例映射到窗口实时矩形(任意 DPI 都准，不用手算)。用法是 agent 自己跑一个 看→懂→定→做→验 的闭环：windows 锁定目标窗口 id、先建界面地图；之后反复 --json shot 截图 → 把截图连同"用户到底要干什么"交给图片理解技能(没有就给用户确认)，让它回 当前状态+下一步最优单动作+目标像素 → activate 后执行那一步(键盘优先：发消息/提交就 type 后按 key enter，绝不去找发送按钮；只有没有键盘途径的图标/菜单才截图读坐标 click) → 再截图核对 → 没完成再来一轮。一次性操作直接这样转；只有"等窗口变化再处理"(如盯微信新消息回复)才在每轮"看"之前加一道 watch 门(--until-change，靠退出码分支)。当用户要：操作桌面或某个应用、点某个按钮、自动填表单、截图看屏幕上有什么、控制微信/某软件、监听窗口有没有新消息再处理、模拟鼠标键盘、自动化 GUI 操作，或提到 runctl 时，使用本技能。
 metadata:
   runify:
     requires:
@@ -69,20 +69,31 @@ runctl 是单文件桌面控制二进制，提供 截图 / 点击 / 输入 / 等
 
 ---
 
+## ⭐ 能按键就别找按钮（键盘优先，最省事最可靠）
+
+定位按钮再点，又慢又易点偏。**凡是有键盘途径的，一律 `key`/`type`，别截图找按钮：**
+
+- **发消息 / 提交 / 搜索**（微信、聊天、搜索框、表单）：`type "内容"` 后**直接 `runctl key enter` 发送**——**绝不去找"发送"按钮**。
+- 关弹窗/取消：`key esc`；换输入框/字段：`key tab`；全选/复制粘贴：`cmd+a`(Win `ctrl+a`) 等。
+- **只有没有键盘等价**的目标（某个图标、链接、菜单项）才走"截图→读坐标→`click`"。
+
+> 典型聊天回复全程就这几步：`activate` → `click` 进输入框 → `type "回复"` → **`key enter`** → 截图看结果。**到此为止，别再找发送按钮。**
+
 ## 干活的闭环：看 → 懂 → 定 → 做 → 验
 
-**先建图（进窗口一次）**：`runctl --json windows` 选目标记下 id →
+**先建图（仅复杂界面才需要，一次）**：`runctl --json windows` 选目标记下 id →
 `runctl activate --window-id <ID>` 置顶 → `runctl --json shot --window-id <ID> --grid --out "$RUNIFY_OUTPUT_DIR/ui.png"` →
 让视觉产出**界面地图**（有哪些控件、各管什么、像素位置——照网格刻度记），记住复用。
+> **简单任务**（发条消息、点个按钮）**跳过建图**，直接进下面循环——别把流程搞复杂。
 
-**然后反复走这五步，直到 `done`——别"截图就点"：**
+**然后反复走这五步，直到 `done`——别"截图就点"、也别"打完字找按钮"：**
 1. **看**　`runctl --json shot --window-id <ID> --grid --out "$RUNIFY_OUTPUT_DIR/now.png"`　**（记下返回的 W、H）**
 2. **懂**　把 now.png + **用户到底要干什么** + 已知地图，交给图片理解技能，要它结构化回
    　`{state, blockers, next_action, target_xy, text, reason, done}`（模板见下）。
    　**没有图片理解技能 → 把 now.png + 你的判断给用户，让其确认下一步与坐标。**
-3. **定**　先清 `blockers`；选**一个**最优动作。不确定 / 有风险 → 先问用户。
+3. **定**　先清 `blockers`；选**一个**最优动作——**能用键盘就用键盘**（发送=`key enter`），别为有键盘途径的事去找按钮。不确定 / 有风险 → 先问用户。
 4. **做**　`runctl activate --window-id <ID>`（确保焦点）再执行那**一步**：
-   　`click/move --window-id <ID> --x <x> --y <y> --shot-w W --shot-h H` ／ `type "<text>"` ／ `key enter` ／ `scroll …`
+   　`type "<text>"` → `key enter`（发消息/提交首选）／ `key esc·tab·cmd+a` ／ 没有键盘途径时才 `click/move --window-id <ID> --x <x> --y <y> --shot-w W --shot-h H` ／ `scroll …`
 5. **验**　再 `runctl --json shot --window-id <ID> --out "$RUNIFY_OUTPUT_DIR/after.png"` 确认生效。
    　没生效 → 回第 2 步重新理解（**绝不盲点连击**）；`done=true` → 结束，否则回第 1 步。
 
@@ -104,6 +115,7 @@ runctl watch --window-id <ID> --until-change --background-only --duration 60
 - state       当前相对目标的状态（一句话）
 - blockers    需先处理的弹窗/登录/报错（无则 none）
 - next_action click|double_click|right_click|type|key|scroll|wait|done 之一
+              （有键盘途径就回 key，如发送=key enter，别为此回 click 去找按钮）
 - target_xy   该动作目标的像素 {x,y}（照网格刻度读，左上为原点；type/key/wait 可省）
 - text        next_action=type 时要输入的文字；key 时填键名(如 enter)
 - reason      为什么这是当前最优的一步
