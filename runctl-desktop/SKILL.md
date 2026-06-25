@@ -88,8 +88,8 @@ runctl 是单文件桌面控制二进制，提供 截图 / 点击 / 输入 / 等
 
 **然后反复走这五步，直到 `done`——别"截图就点"、也别"打完字找按钮"：**
 1. **看**　`runctl --json shot --window-id <ID> --grid --out "$RUNIFY_OUTPUT_DIR/now.png"`　**（记下返回的 W、H）**
-2. **懂**　把 now.png + **用户到底要干什么** + 已知地图，交给图片理解技能，要它结构化回
-   　`{state, blockers, next_action, target_xy, text, reason, done}`（模板见下）。
+2. **懂**　**带着具体目标问**（"目标=…，看这张图，现在该点哪、什么状态"）把 now.png + 已知地图交给图片理解技能，要它结构化回
+   　`{state, next_click, next_action, text, blockers, done}`（**目标性提问模板见下**）。
    　**没有图片理解技能 → 把 now.png + 你的判断给用户，让其确认下一步与坐标。**
 3. **定**　先清 `blockers`；选**一个**最优动作——**能用键盘就用键盘**（发送=`key enter`），别为有键盘途径的事去找按钮。不确定 / 有风险 → 先问用户。
 4. **做**　`runctl activate --window-id <ID>`（确保焦点）再执行那**一步**：
@@ -106,21 +106,31 @@ runctl watch --window-id <ID> --until-change --background-only --duration 60
   exit 124 → 这段时间没动，决定继续等还是收尾
 ```
 
-### 给视觉的提问模板（套用，别只让它"描述图"）
+### 给视觉的提问：要"目标性提问"，别让它泛泛描述图
+
+**核心是把"我要干什么 + 现在该点哪 + 当前状态"一起问出去**，提示词永远带上**具体目标**。
+模板（套用，`<>` 处填具体的）：
 
 ```
-这是 <应用> 窗口截图（已叠坐标网格，刻度=图像像素），尺寸 W×H。用户总目标：<原样填用户需求>。
-已知布局：<填界面地图；首次没有就写"未知，请一并标出关键控件及像素">。
-只看这张图，用 JSON 回答：
-- state       当前相对目标的状态（一句话）
-- blockers    需先处理的弹窗/登录/报错（无则 none）
-- next_action click|double_click|right_click|type|key|scroll|wait|done 之一
-              （有键盘途径就回 key，如发送=key enter，别为此回 click 去找按钮）
-- target_xy   该动作目标的像素 {x,y}（照网格刻度读，左上为原点；type/key/wait 可省）
-- text        next_action=type 时要输入的文字；key 时填键名(如 enter)
-- reason      为什么这是当前最优的一步
-- done        总目标是否完成 true/false
+这是 <应用> 窗口截图（已叠坐标网格，刻度=图像像素），尺寸 W×H。
+我的目标：<具体目标，如"跟张三发一条消息：晚上一起吃饭吗">。
+为达成这个目标，只看这张图，用 JSON 回答：
+- state       当前图片是什么状态、相对目标进行到哪了（一句话）
+- next_click  为推进目标，现在该点哪里的像素 {x,y}（照网格刻度读，左上原点；若这步不用点则 null）
+- next_action 这一步具体做什么：click|double_click|type|key|scroll|wait|done 之一
+              （有键盘途径就回 key——发消息=key enter，别回 click 去找发送按钮）
+- text        next_action=type 要输入的文字；key 时填键名(如 enter)
+- blockers    有没有弹窗/登录/报错要先处理（无则 none）
+- done        目标是否已完成 true/false
 ```
+
+**例：跟张三聊天**（每轮都重新截图、重新这样问，按返回执行一步）——
+1. 问"目标=跟张三聊天，现在该点哪？当前状态？" → 答 `next_click=张三那行的坐标` → `click`
+2. 再截图问 → 答 `next_click=输入框坐标` → `click` 进输入框
+3. 再问 → 答 `next_action=type, text=回复内容` → `type` → 然后 `key enter` 发送
+4. 截图核对：消息已发出 → `done`
+
+> 要点：**目标一字不改地带进每一轮提问**；每轮只问"为了这个目标、看这张图、现在做哪一步"，AI 自然给出"点张三 / 点输入框 / 打字回车"，不会跑偏去描述无关元素。
 
 ---
 
