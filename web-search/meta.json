@@ -1,0 +1,10 @@
+{
+  "name": "浏览器检索",
+  "vendor": "web-search",
+  "version": "1.0.0",
+  "tags": ["联网搜索", "网页抓取", "正文抽取", "资料检索"],
+  "summary": "联网检索与网页正文抽取技能。一组随调随用、互不依赖的原子工具：search（搜关键词返回结果列表）、fetch（抓取网页并抽取正文，支持纯文本/markdown）、search_read（搜索并自动读取前 N 条正文）。默认 DuckDuckGo 免 key 开箱即用，可切换 Serper / Tavily。纯 HTTP 抓取、不渲染 JavaScript、无需安装浏览器。",
+  "capabilities": ["网络搜索", "网页正文抽取", "网页转 markdown", "搜索并自动阅读"],
+  "requires": ["Python>=3.6", "requests"],
+  "note": "不填配置即可用（默认 DuckDuckGo，免 API key）。切换到 Serper/Tavily 后端时才需对应 API key。强 JavaScript 单页应用可能取不到正文（本技能不渲染 JS）。"
+}

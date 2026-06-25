@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# desk — runctl 薄封装入口（类 Unix）。挑一个可用的 Python 跑 desk.py，原样透传参数。
+# 关键：保留子进程（最终是 runctl）的退出码，不强制 0——runctl 的 0/1/2/124 有语义。
+#   ./desk setup                 安装/检查 runctl
+#   ./desk <runctl 子命令> ...   等价于 README 的 runctl <子命令>
+
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+PY=""
+for cand in python3 python; do
+  if command -v "$cand" >/dev/null 2>&1; then
+    if "$cand" -c 'import sys; sys.exit(0 if sys.version_info[:2] >= (3,6) else 1)' >/dev/null 2>&1; then
+      PY="$cand"; break
+    fi
+  fi
+done
+if [ -z "$PY" ]; then
+  echo "RESULT_JSON: {\"status\":\"error\",\"stage\":\"desk\",\"error\":\"未找到 Python>=3.6（试过 python3/python）\"}"
+  exit 1
+fi
+
+"$PY" "$SELF/desk.py" "$@"
+exit $?
