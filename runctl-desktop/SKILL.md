@@ -1,6 +1,6 @@
 ---
 name: 桌面控制(runctl)
-description: 跨平台(macOS/Windows)桌面自动化 / 计算机使用技能，封装 runctl 命令行工具。能力：列出显示器；列出窗口及其 id(同名窗口按 id 精确定位)；截屏(整个虚拟桌面/某显示器/全部显示器/某窗口，即使被遮挡)；移动鼠标并点击/右键/双击；激活窗口置顶；滚轮滚动；按下-拖拽-释放；输入文字；按单键或组合键(enter/esc/tab/cmd+a/alt+f4 等)；用系统默认程序打开 URL/文件/应用；监视窗口或屏幕的像素变化，等到首次变化或限时退出(退出码区分)；检查并(在 macOS)申请屏幕录制与辅助功能权限。坐标做法：先用 `--json shot` 截图(截图一律写进会话落盘目录 $RUNIFY_OUTPUT_DIR)拿到图的宽高，视觉在图上定出目标像素后，点击/移动/滚动/拖拽时连同宽高一起传 --shot-w/--shot-h，runctl 按比例映射到窗口实时矩形(任意 DPI 都准，不用手算)。用法是 agent 自己跑一个 看→懂→定→做→验 的闭环：windows 锁定目标窗口 id、先建界面地图；之后反复 --json shot 截图 → 把截图连同"用户到底要干什么"交给图片理解技能(没有就给用户确认)，让它回 当前状态+下一步最优单动作+目标像素 → activate 后 click/type 执行那一步 → 再截图核对 → 没完成再来一轮。一次性操作直接这样转；只有"等窗口变化再处理"(如盯微信新消息回复)才在每轮"看"之前加一道 watch 门(--until-change，靠退出码分支)。当用户要：操作桌面或某个应用、点某个按钮、自动填表单、截图看屏幕上有什么、控制微信/某软件、监听窗口有没有新消息再处理、模拟鼠标键盘、自动化 GUI 操作，或提到 runctl 时，使用本技能。
+description: 跨平台(macOS/Windows)桌面自动化 / 计算机使用技能，封装 runctl 命令行工具。能力：列出显示器；列出窗口及其 id(同名窗口按 id 精确定位)；截屏(整个虚拟桌面/某显示器/全部显示器/某窗口，即使被遮挡)；移动鼠标并点击/右键/双击；激活窗口置顶；滚轮滚动；按下-拖拽-释放；输入文字；按单键或组合键(enter/esc/tab/cmd+a/alt+f4 等)；用系统默认程序打开 URL/文件/应用；监视窗口或屏幕的像素变化，等到首次变化或限时退出(退出码区分)；检查并(在 macOS)申请屏幕录制与辅助功能权限。坐标做法：先用 `--json shot --grid` 截图(--grid 叠带刻度的坐标网格助读坐标；截图一律写进会话落盘目录 $RUNIFY_OUTPUT_DIR)拿到图的宽高，视觉照网格刻度定出目标像素后，点击/移动/滚动/拖拽时连同宽高一起传 --shot-w/--shot-h，runctl 按比例映射到窗口实时矩形(任意 DPI 都准，不用手算)。用法是 agent 自己跑一个 看→懂→定→做→验 的闭环：windows 锁定目标窗口 id、先建界面地图；之后反复 --json shot 截图 → 把截图连同"用户到底要干什么"交给图片理解技能(没有就给用户确认)，让它回 当前状态+下一步最优单动作+目标像素 → activate 后 click/type 执行那一步 → 再截图核对 → 没完成再来一轮。一次性操作直接这样转；只有"等窗口变化再处理"(如盯微信新消息回复)才在每轮"看"之前加一道 watch 门(--until-change，靠退出码分支)。当用户要：操作桌面或某个应用、点某个按钮、自动填表单、截图看屏幕上有什么、控制微信/某软件、监听窗口有没有新消息再处理、模拟鼠标键盘、自动化 GUI 操作，或提到 runctl 时，使用本技能。
 metadata:
   runify:
     requires:
@@ -49,13 +49,15 @@ runctl 是单文件桌面控制二进制，提供 截图 / 点击 / 输入 / 等
 
 **三步，缺一不可：**
 
-1. **截图必须带 `--json`**，从输出读这张图的 `width` / `height`：
+1. **截图带 `--json` + `--grid`**，从输出读这张图的 `width` / `height`：
    ```
-   runctl --json shot --window-id <ID> --out "$RUNIFY_OUTPUT_DIR/now.png"
+   runctl --json shot --window-id <ID> --grid --out "$RUNIFY_OUTPUT_DIR/now.png"
    → {"ok":true,"action":"shot","width":W,"height":H,"path":".../now.png"}
    ```
+   `--grid` 叠一层**带刻度标注的坐标网格**，刻度即截图像素坐标，视觉照格线读 (x,y) 更准
+   （太密可 `--grid edge` 只标边缘刻度、`--grid-step 50` 调间距）。
    （**截图一律写进 `$RUNIFY_OUTPUT_DIR`**，见下《截图落盘》。）
-2. **视觉在 f.png 上定出目标像素 `(x,y)`**（左上角为原点）。
+2. **视觉在这张带网格的图上定出目标像素 `(x,y)`**（左上角为原点，照最近格线刻度估）。
 3. **点击/移动/滚动/拖拽时，把这张图的 W、H 一起传 `--shot-w`/`--shot-h`**：
    ```
    runctl click --window-id <ID> --x <x> --y <y> --shot-w W --shot-h H
@@ -70,11 +72,11 @@ runctl 是单文件桌面控制二进制，提供 截图 / 点击 / 输入 / 等
 ## 干活的闭环：看 → 懂 → 定 → 做 → 验
 
 **先建图（进窗口一次）**：`runctl --json windows` 选目标记下 id →
-`runctl activate --window-id <ID>` 置顶 → `runctl --json shot --window-id <ID> --out "$RUNIFY_OUTPUT_DIR/ui.png"` →
-让视觉产出**界面地图**（有哪些控件、各管什么、像素位置），记住复用。
+`runctl activate --window-id <ID>` 置顶 → `runctl --json shot --window-id <ID> --grid --out "$RUNIFY_OUTPUT_DIR/ui.png"` →
+让视觉产出**界面地图**（有哪些控件、各管什么、像素位置——照网格刻度记），记住复用。
 
 **然后反复走这五步，直到 `done`——别"截图就点"：**
-1. **看**　`runctl --json shot --window-id <ID> --out "$RUNIFY_OUTPUT_DIR/now.png"`　**（记下返回的 W、H）**
+1. **看**　`runctl --json shot --window-id <ID> --grid --out "$RUNIFY_OUTPUT_DIR/now.png"`　**（记下返回的 W、H）**
 2. **懂**　把 now.png + **用户到底要干什么** + 已知地图，交给图片理解技能，要它结构化回
    　`{state, blockers, next_action, target_xy, text, reason, done}`（模板见下）。
    　**没有图片理解技能 → 把 now.png + 你的判断给用户，让其确认下一步与坐标。**
@@ -96,13 +98,13 @@ runctl watch --window-id <ID> --until-change --background-only --duration 60
 ### 给视觉的提问模板（套用，别只让它"描述图"）
 
 ```
-这是 <应用> 窗口截图，尺寸 W×H。用户总目标：<原样填用户需求>。
+这是 <应用> 窗口截图（已叠坐标网格，刻度=图像像素），尺寸 W×H。用户总目标：<原样填用户需求>。
 已知布局：<填界面地图；首次没有就写"未知，请一并标出关键控件及像素">。
 只看这张图，用 JSON 回答：
 - state       当前相对目标的状态（一句话）
 - blockers    需先处理的弹窗/登录/报错（无则 none）
 - next_action click|double_click|right_click|type|key|scroll|wait|done 之一
-- target_xy   该动作目标的像素 {x,y}（左上为原点；type/key/wait 可省）
+- target_xy   该动作目标的像素 {x,y}（照网格刻度读，左上为原点；type/key/wait 可省）
 - text        next_action=type 时要输入的文字；key 时填键名(如 enter)
 - reason      为什么这是当前最优的一步
 - done        总目标是否完成 true/false
@@ -123,7 +125,7 @@ runctl watch --window-id <ID> --until-change --background-only --duration 60
 | 命令 | 用途 | 关键参数 |
 |---|---|---|
 | `windows` | 列窗口 + id（开头锁定用） | `--json` |
-| `shot` | 截图（**务必 `--json` 拿 W/H**） | `--window-id N`，`--out` |
+| `shot` | 截图（**务必 `--json` 拿 W/H**；`--grid` 叠坐标网格助定位） | `--window-id N`，`--out`，`--grid`(可 `edge` / `--grid-step N`) |
 | `activate` | 置顶（做动作前必做） | `activate --window-id N` |
 | `click` / `move` | 点击 / 移动 | `--window-id N --x --y --shot-w W --shot-h H`；`--button right`；`--double` |
 | `type` | 输入到当前焦点（先 activate 并点进输入框） | `type "文本"` |
