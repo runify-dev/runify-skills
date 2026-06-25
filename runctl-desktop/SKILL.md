@@ -1,6 +1,6 @@
 ---
 name: 桌面控制(runctl)
-description: 跨平台(macOS/Windows)桌面自动化 / 计算机使用技能，封装 runctl 命令行工具。能力：列出显示器；列出窗口及其 id(同名窗口按 id 精确定位)；截屏(整个虚拟桌面/某显示器/全部显示器/某窗口，即使被遮挡)；移动鼠标并点击/右键/双击；激活窗口置顶；滚轮滚动；按下-拖拽-释放；输入文字；按单键或组合键(enter/esc/tab/cmd+a/alt+f4 等)；用系统默认程序打开 URL/文件/应用；监视窗口或屏幕的像素变化，等到首次变化或限时退出(退出码区分)；检查并(在 macOS)申请屏幕录制与辅助功能权限。坐标做法：先用 `--json shot` 截图拿到图的宽高，视觉在图上定出目标像素后，点击/移动/滚动/拖拽时连同宽高一起传 --shot-w/--shot-h，runctl 按比例映射到窗口实时矩形(任意 DPI 都准，不用手算)。用法是 agent 自己跑一个 感知→理解→决策→执行→核对 的闭环：windows 锁定目标窗口 id、先建界面地图；watch 等变化 → --json shot 截图 → 把截图连同"用户到底要干什么"交给图片理解技能(没有就给用户确认)，让它回 当前状态+下一步最优单动作+目标像素 → activate 后 click/type 执行那一步 → 再截图核对 → 没完成回到 watch。当用户要：操作桌面或某个应用、点某个按钮、自动填表单、截图看屏幕上有什么、控制微信/某软件、监听窗口有没有新消息再处理、模拟鼠标键盘、自动化 GUI 操作，或提到 runctl 时，使用本技能。
+description: 跨平台(macOS/Windows)桌面自动化 / 计算机使用技能，封装 runctl 命令行工具。能力：列出显示器；列出窗口及其 id(同名窗口按 id 精确定位)；截屏(整个虚拟桌面/某显示器/全部显示器/某窗口，即使被遮挡)；移动鼠标并点击/右键/双击；激活窗口置顶；滚轮滚动；按下-拖拽-释放；输入文字；按单键或组合键(enter/esc/tab/cmd+a/alt+f4 等)；用系统默认程序打开 URL/文件/应用；监视窗口或屏幕的像素变化，等到首次变化或限时退出(退出码区分)；检查并(在 macOS)申请屏幕录制与辅助功能权限。坐标做法：先用 `--json shot` 截图拿到图的宽高，视觉在图上定出目标像素后，点击/移动/滚动/拖拽时连同宽高一起传 --shot-w/--shot-h，runctl 按比例映射到窗口实时矩形(任意 DPI 都准，不用手算)。用法是 agent 自己跑一个 看→懂→定→做→验 的闭环：windows 锁定目标窗口 id、先建界面地图；之后反复 --json shot 截图 → 把截图连同"用户到底要干什么"交给图片理解技能(没有就给用户确认)，让它回 当前状态+下一步最优单动作+目标像素 → activate 后 click/type 执行那一步 → 再截图核对 → 没完成再来一轮。一次性操作直接这样转；只有"等窗口变化再处理"(如盯微信新消息回复)才在每轮"看"之前加一道 watch 门(--until-change，靠退出码分支)。当用户要：操作桌面或某个应用、点某个按钮、自动填表单、截图看屏幕上有什么、控制微信/某软件、监听窗口有没有新消息再处理、模拟鼠标键盘、自动化 GUI 操作，或提到 runctl 时，使用本技能。
 metadata:
   runify:
     requires:
@@ -39,8 +39,9 @@ runctl 是单文件桌面控制二进制，提供 截图 / 点击 / 输入 / 等
 **循环由 agent 自己跑**：调一步 → 看结果 → 决定下一步，本技能不写脚本、不起常驻进程。
 每条命令加 `--json` 给机器读，**退出码 0=成功 / 1=错 / 2=参数错 / 124=watch 超时无变化**。
 
-**入口**：本目录用 `./desk <子命令>`（等价 `runctl <子命令>`，自动定位、保留退出码）。
-runctl 已在 PATH 也可直接 `runctl`。首次先 `./desk setup`（见末尾《安装+权限》）。
+**怎么调**：直接 `runctl <子命令>`（已装在 PATH）。**下文命令一律用 `runctl`，照抄即可。**
+> 仅当没装 runctl 时：本技能附带 `./desk` 入口，跑一次 `./desk setup` 自动安装，装好后照常用 `runctl`。
+> （`./desk <子命令>` 与 `runctl <子命令>` 完全等价，二选一，别混着用。）
 
 ---
 
@@ -65,26 +66,31 @@ runctl 已在 PATH 也可直接 `runctl`。首次先 `./desk setup`（见末尾�
 
 ---
 
-## 干活的闭环：看 → 懂 → 定 → 做 → 验（agent 自己一圈圈转）
+## 干活的闭环：看 → 懂 → 定 → 做 → 验
 
-别"截图就点"。每推进一步都走完这五步：
+**先建图（进窗口一次）**：`runctl --json windows` 选目标记下 id →
+`runctl activate --window-id <ID>` 置顶 → `runctl --json shot --window-id <ID> --out ui.png` →
+让视觉产出**界面地图**（有哪些控件、各管什么、像素位置），记住复用。
 
-**0. 建图（进窗口先做一次）**
-`runctl --json windows` 选目标记下 id → `runctl activate --window-id <ID>` 置顶 →
-`runctl --json shot --window-id <ID> --out ui.png` → 让视觉产出**界面地图**（有哪些控件、各管什么、像素位置），记住复用。
+**然后反复走这五步，直到 `done`——别"截图就点"：**
+1. **看**　`runctl --json shot --window-id <ID> --out now.png`　**（记下返回的 W、H）**
+2. **懂**　把 now.png + **用户到底要干什么** + 已知地图，交给图片理解技能，要它结构化回
+   　`{state, blockers, next_action, target_xy, text, reason, done}`（模板见下）。
+   　**没有图片理解技能 → 把 now.png + 你的判断给用户，让其确认下一步与坐标。**
+3. **定**　先清 `blockers`；选**一个**最优动作。不确定 / 有风险 → 先问用户。
+4. **做**　`runctl activate --window-id <ID>`（确保焦点）再执行那**一步**：
+   　`click/move --window-id <ID> --x <x> --y <y> --shot-w W --shot-h H` ／ `type "<text>"` ／ `key enter` ／ `scroll …`
+5. **验**　再 `runctl --json shot --window-id <ID> --out after.png` 确认生效。
+   　没生效 → 回第 2 步重新理解（**绝不盲点连击**）；`done=true` → 结束，否则回第 1 步。
 
-**主循环：**
-1. **等事件**　`runctl watch --window-id <ID> --until-change --background-only --duration 60`
-   　　exit 0 = 变了，继续↓；　exit 124 = 没动，决定再等还是收尾。
-2. **看**　　`runctl --json shot --window-id <ID> --out now.png`　**（记下返回的 W、H）**
-3. **懂**　　把 now.png + **用户到底要干什么** + 已知地图，交给图片理解技能，要它结构化回
-   　　`{state, blockers, next_action, target_xy, text, reason, done}`（模板见下）。
-   　　**没有图片理解技能 → 把 now.png + 你的判断给用户，让其确认下一步与坐标。**
-4. **定**　　先清 `blockers`；从结果里选**一个**最优动作。不确定 / 有风险 → 先问用户。
-5. **做**　　`runctl activate --window-id <ID>`（确保焦点）再执行那**一步**：
-   　　`click/move --window-id <ID> --x <x> --y <y> --shot-w W --shot-h H` ／ `type "<text>"` ／ `key enter` ／ `scroll …`
-6. **验**　　再 `runctl --json shot --window-id <ID> --out after.png` 确认生效。
-   　　没生效 → 回 3 重新理解再试（**绝不盲点连击**）；`done=true` → 结束，否则回 1。
+> **一次性任务**（点个按钮、填个表、开个设置）就这样转，不需要 watch。
+
+**只有当任务是"等窗口出现变化再处理"时**（如盯微信新消息回复），才在每轮的"看"之前加一道 `watch` 门：
+```
+runctl watch --window-id <ID> --until-change --background-only --duration 60
+  exit 0  → 窗口变了，进入上面的 看→懂→定→做→验
+  exit 124 → 这段时间没动，决定继续等还是收尾
+```
 
 ### 给视觉的提问模板（套用，别只让它"描述图"）
 
@@ -103,7 +109,7 @@ runctl 已在 PATH 也可直接 `runctl`。首次先 `./desk setup`（见末尾�
 
 ---
 
-## 命令速查（都用 `./desk` 或 `runctl`）
+## 命令速查（统一用 `runctl`）
 
 | 命令 | 用途 | 关键参数 |
 |---|---|---|
@@ -112,17 +118,17 @@ runctl 已在 PATH 也可直接 `runctl`。首次先 `./desk setup`（见末尾�
 | `activate` | 置顶（做动作前必做） | `activate --window-id N` |
 | `click` / `move` | 点击 / 移动 | `--window-id N --x --y --shot-w W --shot-h H`；`--button right`；`--double` |
 | `type` | 输入到当前焦点（先 activate 并点进输入框） | `type "文本"` |
-| `key` | 按键 / 组合键 | `key enter` / `key cmd+a` / `key alt+f4` |
+| `key` | 按键 / 组合键 | `key enter` / `key cmd+a`(Win 用 `ctrl+a`) / `key alt+f4` |
 | `scroll` | 滚动 | `--window-id N --x --y --shot-w W --shot-h H --dir up\|down --amount N` |
 | `drag` | 拖拽 | `--from-x --from-y --to-x --to-y`（可带 `--shot-w/--shot-h`） |
 | `watch` | 等窗口变化（"等事件"那步） | `--window-id N --until-change --background-only --duration <秒>` |
 | `open` | 系统默认程序打开 | `open <url\|文件\|app>` |
 | `check` | 报告/申请权限 | `--request` |
 
-## watch 要点
+## watch 要点（仅"等事件再处理"类任务才用）
 
 - `--until-change --duration <秒>` = "最多等 N 秒等一次变化"，靠**退出码分支**（0 变 / 124 超时 / 1\|2 错）。
-  agent 循环就用这个：一调一返，不挂死。
+  一调一返、不挂死——需要等外部变化时用它当门，其余任务不用。
 - `--background-only`：只在窗口**非聚焦**时算变化，避免把 agent 自己的 click/type 误判成"新变化"。
 - 它只认像素变化、不认语义：用 `--threshold`（滤小抖动）`--cooldown`（去抖）逼近"有新东西"；
   要判断"是不是该处理的事"，靠把截图交给视觉。
