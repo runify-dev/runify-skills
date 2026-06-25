@@ -1,6 +1,6 @@
 ---
 name: 桌面控制(runctl)
-description: 跨平台(macOS/Windows)桌面自动化 / 计算机使用技能，封装 runctl 命令行工具。能力：列出显示器；列出窗口及其 id(同名窗口按 id 精确定位)；截屏(整个虚拟桌面/某显示器/全部显示器/某窗口，即使被遮挡)；移动鼠标并点击/右键/双击；激活窗口置顶；滚轮滚动；按下-拖拽-释放；输入文字；按单键或组合键(enter/esc/tab/cmd+a/alt+f4 等)；用系统默认程序打开 URL/文件/应用；监视窗口或屏幕的像素变化，等到首次变化或限时退出(退出码区分)；检查并(在 macOS)申请屏幕录制与辅助功能权限。坐标做法：先用 `--json shot` 截图拿到图的宽高，视觉在图上定出目标像素后，点击/移动/滚动/拖拽时连同宽高一起传 --shot-w/--shot-h，runctl 按比例映射到窗口实时矩形(任意 DPI 都准，不用手算)。用法是 agent 自己跑一个 看→懂→定→做→验 的闭环：windows 锁定目标窗口 id、先建界面地图；之后反复 --json shot 截图 → 把截图连同"用户到底要干什么"交给图片理解技能(没有就给用户确认)，让它回 当前状态+下一步最优单动作+目标像素 → activate 后 click/type 执行那一步 → 再截图核对 → 没完成再来一轮。一次性操作直接这样转；只有"等窗口变化再处理"(如盯微信新消息回复)才在每轮"看"之前加一道 watch 门(--until-change，靠退出码分支)。当用户要：操作桌面或某个应用、点某个按钮、自动填表单、截图看屏幕上有什么、控制微信/某软件、监听窗口有没有新消息再处理、模拟鼠标键盘、自动化 GUI 操作，或提到 runctl 时，使用本技能。
+description: 跨平台(macOS/Windows)桌面自动化 / 计算机使用技能，封装 runctl 命令行工具。能力：列出显示器；列出窗口及其 id(同名窗口按 id 精确定位)；截屏(整个虚拟桌面/某显示器/全部显示器/某窗口，即使被遮挡)；移动鼠标并点击/右键/双击；激活窗口置顶；滚轮滚动；按下-拖拽-释放；输入文字；按单键或组合键(enter/esc/tab/cmd+a/alt+f4 等)；用系统默认程序打开 URL/文件/应用；监视窗口或屏幕的像素变化，等到首次变化或限时退出(退出码区分)；检查并(在 macOS)申请屏幕录制与辅助功能权限。坐标做法：先用 `--json shot` 截图(截图一律写进会话落盘目录 $RUNIFY_OUTPUT_DIR)拿到图的宽高，视觉在图上定出目标像素后，点击/移动/滚动/拖拽时连同宽高一起传 --shot-w/--shot-h，runctl 按比例映射到窗口实时矩形(任意 DPI 都准，不用手算)。用法是 agent 自己跑一个 看→懂→定→做→验 的闭环：windows 锁定目标窗口 id、先建界面地图；之后反复 --json shot 截图 → 把截图连同"用户到底要干什么"交给图片理解技能(没有就给用户确认)，让它回 当前状态+下一步最优单动作+目标像素 → activate 后 click/type 执行那一步 → 再截图核对 → 没完成再来一轮。一次性操作直接这样转；只有"等窗口变化再处理"(如盯微信新消息回复)才在每轮"看"之前加一道 watch 门(--until-change，靠退出码分支)。当用户要：操作桌面或某个应用、点某个按钮、自动填表单、截图看屏幕上有什么、控制微信/某软件、监听窗口有没有新消息再处理、模拟鼠标键盘、自动化 GUI 操作，或提到 runctl 时，使用本技能。
 metadata:
   runify:
     requires:
@@ -51,9 +51,10 @@ runctl 是单文件桌面控制二进制，提供 截图 / 点击 / 输入 / 等
 
 1. **截图必须带 `--json`**，从输出读这张图的 `width` / `height`：
    ```
-   runctl --json shot --window-id <ID> --out f.png
-   → {"ok":true,"action":"shot","width":W,"height":H,"path":"f.png"}
+   runctl --json shot --window-id <ID> --out "$RUNIFY_OUTPUT_DIR/now.png"
+   → {"ok":true,"action":"shot","width":W,"height":H,"path":".../now.png"}
    ```
+   （**截图一律写进 `$RUNIFY_OUTPUT_DIR`**，见下《截图落盘》。）
 2. **视觉在 f.png 上定出目标像素 `(x,y)`**（左上角为原点）。
 3. **点击/移动/滚动/拖拽时，把这张图的 W、H 一起传 `--shot-w`/`--shot-h`**：
    ```
@@ -69,18 +70,18 @@ runctl 是单文件桌面控制二进制，提供 截图 / 点击 / 输入 / 等
 ## 干活的闭环：看 → 懂 → 定 → 做 → 验
 
 **先建图（进窗口一次）**：`runctl --json windows` 选目标记下 id →
-`runctl activate --window-id <ID>` 置顶 → `runctl --json shot --window-id <ID> --out ui.png` →
+`runctl activate --window-id <ID>` 置顶 → `runctl --json shot --window-id <ID> --out "$RUNIFY_OUTPUT_DIR/ui.png"` →
 让视觉产出**界面地图**（有哪些控件、各管什么、像素位置），记住复用。
 
 **然后反复走这五步，直到 `done`——别"截图就点"：**
-1. **看**　`runctl --json shot --window-id <ID> --out now.png`　**（记下返回的 W、H）**
+1. **看**　`runctl --json shot --window-id <ID> --out "$RUNIFY_OUTPUT_DIR/now.png"`　**（记下返回的 W、H）**
 2. **懂**　把 now.png + **用户到底要干什么** + 已知地图，交给图片理解技能，要它结构化回
    　`{state, blockers, next_action, target_xy, text, reason, done}`（模板见下）。
    　**没有图片理解技能 → 把 now.png + 你的判断给用户，让其确认下一步与坐标。**
 3. **定**　先清 `blockers`；选**一个**最优动作。不确定 / 有风险 → 先问用户。
 4. **做**　`runctl activate --window-id <ID>`（确保焦点）再执行那**一步**：
    　`click/move --window-id <ID> --x <x> --y <y> --shot-w W --shot-h H` ／ `type "<text>"` ／ `key enter` ／ `scroll …`
-5. **验**　再 `runctl --json shot --window-id <ID> --out after.png` 确认生效。
+5. **验**　再 `runctl --json shot --window-id <ID> --out "$RUNIFY_OUTPUT_DIR/after.png"` 确认生效。
    　没生效 → 回第 2 步重新理解（**绝不盲点连击**）；`done=true` → 结束，否则回第 1 步。
 
 > **一次性任务**（点个按钮、填个表、开个设置）就这样转，不需要 watch。
@@ -108,6 +109,14 @@ runctl watch --window-id <ID> --until-change --background-only --duration 60
 ```
 
 ---
+
+## 截图落盘：一律写进 `$RUNIFY_OUTPUT_DIR`
+
+- **所有 `shot --out` 都写到 `$RUNIFY_OUTPUT_DIR` 下**（运行时注入的会话落盘目录），
+  如 `--out "$RUNIFY_OUTPUT_DIR/now.png"`。好处：不污染工作目录；图在会话挂载目录里，
+  **图片理解技能、展示给用户都能直接拿到**（如平台的 `./api/storage/file/...`）。
+- 用固定几个名字（`ui/now/after`）**覆盖**即可，别按时间戳堆积——watch 可能跑很久，会塞满盘。
+- 该变量是 env、每条命令都能直接引用。**未设置**（本地直跑）时退回临时目录：mac/Linux `/tmp`、Windows `%TEMP%`。
 
 ## 命令速查（统一用 `runctl`）
 
