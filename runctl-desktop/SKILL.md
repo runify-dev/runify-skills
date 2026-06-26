@@ -54,8 +54,9 @@ runctl 是单文件桌面控制二进制，提供 截图 / 点击 / 输入 / 等
    runctl --json shot --window-id <ID> --grid --out "$RUNIFY_OUTPUT_DIR/now.png"
    → {"ok":true,"action":"shot","width":W,"height":H,"path":".../now.png"}
    ```
-   `--grid` 叠一层**带刻度标注的坐标网格**，刻度即截图像素坐标，视觉照格线读 (x,y) 更准
-   （太密可 `--grid edge` 只标边缘刻度、`--grid-step 50` 调间距）。
+   ⛔ **任何 `shot` 都必须带 `--grid`，没有例外**（核对那张也带）——`--grid` 叠一层**带刻度的坐标网格**，
+   刻度即截图像素坐标，视觉照格线读 (x,y) 才准；不带网格 = 让模型凭空猜坐标，必偏。
+   （太密可 `--grid edge` 只标边缘刻度、`--grid-step 50` 调间距。）
    （**截图一律写进 `$RUNIFY_OUTPUT_DIR`**，见下《截图落盘》。）
 2. **视觉在这张带网格的图上定出目标像素 `(x,y)`**（左上角为原点，照最近格线刻度估）。
 3. **点击/移动/滚动/拖拽时，把这张图的 W、H 一起传 `--shot-w`/`--shot-h`**：
@@ -154,7 +155,7 @@ runctl watch --window-id <ID> --until-change --background-only --duration 60
 | 命令 | 用途 | 关键参数 |
 |---|---|---|
 | `windows` | 列窗口 + id（开头锁定用） | `--json` |
-| `shot` | 截图（**务必 `--json` 拿 W/H**；`--grid` 叠坐标网格助定位） | `--window-id N`，`--out`，`--grid`(可 `edge` / `--grid-step N`) |
+| `shot` | 截图（**一律 `--json --grid`**：拿 W/H + 叠坐标网格，无例外） | `--window-id N`，`--out`，`--grid`(**必带**；可 `edge` / `--grid-step N`) |
 | `activate` | 置顶（做动作前必做） | `activate --window-id N` |
 | `click` / `move` | 点击 / 移动 | `--window-id N --x --y --shot-w W --shot-h H`；`--button right`；`--double` |
 | `type` | 输入到当前焦点（先 activate 并点进输入框） | `type "文本"` |
